@@ -19,6 +19,25 @@ The code that generates tests from them in in the escript file:
 Release Notes
 =============
 
+Version 1.2.0 support Github code blocks
+----------------------------------------
+
+```ruby
+require 'redcarpet'
+markdown = Redcarpet.new("Hello World!")
+puts markdown.to_html
+```
+
+It will be parsed to html
+
+<pre class="ruby">
+  <code>
+    require 'redcarpet'
+    markdown = Redcarpet.new("Hello World!")
+    puts markdown.to_html
+  <code>
+</pre>
+
 Version 1.1.12 Production Bug Fix
 ---------------------------------
 
