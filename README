@@ -30,13 +30,15 @@ puts markdown.to_html
 
 It will be parsed to html
 
-<pre class="ruby">
-  <code>
+<pre>
+  <code class="ruby">
     require 'redcarpet'
     markdown = Redcarpet.new("Hello World!")
     puts markdown.to_html
   <code>
 </pre>
+
+I don't support double backtick and tab and 4 spaces for code block. Let's use triple backtick.
 
 Version 1.1.12 Production Bug Fix
 ---------------------------------

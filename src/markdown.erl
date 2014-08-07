@@ -477,107 +477,124 @@ ml2(H, List) ->
 %%%   - horizontal rules
 %%%
 type_lines(Lines) ->
-    {Refs, TypedLines} = type_lines1(Lines, [], []),
+    {Refs, TypedLines} = type_lines1(Lines, [], [], false),
     {strip_lines(TypedLines), Refs}.
 
-type_lines1([], A1, A2) ->
+type_lines1([], A1, A2, _IsTriple) ->
     {A1, lists:reverse(A2)};
-type_lines1([[{{ws, sp}, _}, {{inline, open}, _} | T1] = H | T2], A1, A2) ->
+type_lines1([[{{ws, sp}, _}, {{inline, open}, _} | T1] = H | T2], A1, A2, IsTriple) ->
     %% this clause extracts URL and Image refs
     %% (it is the only one that uses A1 and A2...
     %% inlines can have up to 3 spaces before it
-    t_inline(H, T1, T2, A1, A2);
-type_lines1([[{{ws, tab}, _}, {{inline, open}, _} | T1] = H | T2], A1, A2) ->
-    t_inline(H, T1, T2, A1, A2);
-type_lines1([[{{ws, comp}, W}, {{inline, open}, _} | T1] = H | T2], A1, A2) ->
+    t_inline(H, T1, T2, A1, A2, IsTriple);
+type_lines1([[{{ws, tab}, _}, {{inline, open}, _} | T1] = H | T2], A1, A2, IsTriple) ->
+    t_inline(H, T1, T2, A1, A2, IsTriple);
+type_lines1([[{{ws, comp}, W}, {{inline, open}, _} | T1] = H | T2], A1, A2, IsTriple) ->
     case gt(W, 3) of
         {true, _R} ->
-            t_inline(H, T1, T2, A1, A2);
+            t_inline(H, T1, T2, A1, A2, IsTriple);
         false      ->
-            type_lines1(T1, A1, [{normal , H} | A2]) % same exit at the final clause!
+            % same exit at the final clause!
+            type_lines1(T1, A1, [{normal , H} | A2], IsTriple)
     end,
-    t_inline(H, T1, T2, A1, A2);
-type_lines1([[{{inline, open}, _} | T1] = H | T2], A1, A2) ->
-    t_inline(H, T1, T2, A1, A2);
-type_lines1([[{{md, eq}, _} | _T] = H | T], A1, A2) ->
+    t_inline(H, T1, T2, A1, A2, IsTriple);
+type_lines1([[{{inline, open}, _} | T1] = H | T2], A1, A2, IsTriple) ->
+    t_inline(H, T1, T2, A1, A2, IsTriple);
+type_lines1([[{{md, eq}, _} | _T] = H | T], A1, A2, IsTriple) ->
     %% types setext lines
-    type_lines1(T, A1, [type_setext_h1(H) | A2]);
-type_lines1([[{{md, dash}, _} | _T] = H | T], A1, A2) ->
+    type_lines1(T, A1, [type_setext_h1(H) | A2], IsTriple);
+type_lines1([[{{md, dash}, _} | _T] = H | T], A1, A2, IsTriple) ->
     %% NOTE 1: generates a ul as the default not a normal line
     %% NOTE 2: depending on the context this might generate an <h2> header
     %%         or an <hr />
     %% NOTE 3: space - is typed to a bullet down in <ul> land...
-    type_lines1(T, A1, [type_setext_h2(H) | A2]);
-type_lines1([[{{md, atx}, _} | _T] = H | T], A1, A2) ->
+    type_lines1(T, A1, [type_setext_h2(H) | A2], IsTriple);
+type_lines1([[{{md, atx}, _} | _T] = H | T], A1, A2, IsTriple) ->
     %% types atx lines
-    type_lines1(T, A1, [type_atx(H) | A2]);
-type_lines1([[{{md, gt}, _} | []] = H | T], A1, A2) ->
+    case IsTriple of
+      true -> type_lines1(T, A1, [{normal, H} | A2], true);
+      false -> type_lines1(T, A1, [type_atx(H) | A2], false)
+    end;
+type_lines1([[{{md, gt}, _} | []] = H | T], A1, A2, IsTriple) ->
     %% types blockquotes
     %% a blockquote on its own or followed by a linefeed is
     %% displayed 'as is' by showdown
-    type_lines1(T, A1, [{normal, H} | A2]);
-type_lines1([[{{md, gt}, _}, {{lf, _}, _} | []] = H | T], A1, A2) ->
-    type_lines1(T, A1, [{normal, H} | A2]);
+    type_lines1(T, A1, [{normal, H} | A2], IsTriple);
+type_lines1([[{{md, gt}, _}, {{lf, _}, _} | []] = H | T], A1, A2, IsTriple) ->
+    type_lines1(T, A1, [{normal, H} | A2], IsTriple);
 %% one with anything after it starts a blockquote
-type_lines1([[{{md, gt}, _} | _T1] = H | T], A1, A2) ->
-    type_lines1(T, A1, [{blockquote, H} | A2]);
-type_lines1([[{{ws, _}, _}, {{md, star}, _} = ST1, {{ws, _}, _} = WS1 | T1] = H | T], A1, A2) ->
+type_lines1([[{{md, gt}, _} | _T1] = H | T], A1, A2, IsTriple) ->
+    type_lines1(T, A1, [{blockquote, H} | A2], IsTriple);
+type_lines1([[{{ws, _}, _}, {{md, star}, _} = ST1, {{ws, _}, _} = WS1 | T1] = H | T], A1, A2, IsTriple) ->
     %% types unordered lists lines
     %% NOTE 1: the dashed version is generated in type_setext_h2
     %% NOTE 2: the asterix version also might generate a horizontal rule
     %%         which is why it jumps to type_star2 <-- note the 2!!
-    type_lines1(T, A1, [{type_star2([ST1, WS1 | T1]), H} | A2]);
-type_lines1([[{{md, star}, _}, {{ws, _}, _} | _T1] = H | T], A1, A2) ->
-    type_lines1(T, A1, [{type_star2(H), H} | A2]);
-type_lines1([[{{ws, _}, _}, {{md, plus}, _}, {{ws, _}, _} = W | T1] = H | T], A1, A2) ->
-    type_lines1(T, A1, [{{ul, make_list_str([W | T1])}, H} | A2]);
-type_lines1([[{{md, plus}, _}, {{ws, _}, _} = W | T1] = H | T], A1, A2) ->
-    type_lines1(T, A1, [{{ul, make_list_str([W | T1])}, H} | A2]);
+    type_lines1(T, A1, [{type_star2([ST1, WS1 | T1]), H} | A2], IsTriple);
+type_lines1([[{{md, star}, _}, {{ws, _}, _} | _T1] = H | T], A1, A2, IsTriple) ->
+    type_lines1(T, A1, [{type_star2(H), H} | A2], IsTriple);
+type_lines1([[{{ws, _}, _}, {{md, plus}, _}, {{ws, _}, _} = W | T1] = H | T], A1, A2, IsTriple) ->
+    type_lines1(T, A1, [{{ul, make_list_str([W | T1])}, H} | A2], IsTriple);
+type_lines1([[{{md, plus}, _}, {{ws, _}, _} = W | T1] = H | T], A1, A2, IsTriple) ->
+    type_lines1(T, A1, [{{ul, make_list_str([W | T1])}, H} | A2], IsTriple);
 %% UL based on dashes
-type_lines1([[{{ws, _}, _}, {{md, dash}, _}, {{ws, _}, _} = W | T1] = H | T], A1, A2) ->
-    type_lines1(T, A1, [{{ul, make_list_str([W | T1])}, H} | A2]);
-type_lines1([[{{ws, _}, _}, {num, _} = N1| T1] | T], A1, A2) ->
+type_lines1([[{{ws, _}, _}, {{md, dash}, _}, {{ws, _}, _} = W | T1] = H | T], A1, A2, IsTriple) ->
+    type_lines1(T, A1, [{{ul, make_list_str([W | T1])}, H} | A2], IsTriple);
+type_lines1([[{{ws, _}, _}, {num, _} = N1| T1] | T], A1, A2, IsTriple) ->
     %% types ordered lists...
-    type_lines1(T, A1, [type_ol([N1 | T1]) | A2]);
-type_lines1([[{num, _} | _T] = H | T], A1, A2) ->
-    type_lines1(T, A1, [type_ol(H) | A2]);
-type_lines1([[{{md, underscore}, _} | _T1] = H | T], A1, A2) ->
+    type_lines1(T, A1, [type_ol([N1 | T1]) | A2], IsTriple);
+type_lines1([[{num, _} | _T] = H | T], A1, A2, IsTriple) ->
+    type_lines1(T, A1, [type_ol(H) | A2], IsTriple);
+type_lines1([[{{md, underscore}, _} | _T1] = H | T], A1, A2, IsTriple) ->
     %% types horizontal rules for stars and underscores
     %% dashes and some stars are done elsewhere...
-    type_lines1(T, A1, [type_underscore(H) | A2]);
-type_lines1([[{{md, star}, _} | _T1] = H | T], A1, A2) ->
-    type_lines1(T, A1, [type_star(H) | A2]);
-type_lines1([[{{{tag, _Type}, Tag}, _ } = H | T1] = List | T], A1, A2) ->
+    type_lines1(T, A1, [type_underscore(H) | A2], IsTriple);
+type_lines1([[{{md, star}, _} | _T1] = H | T], A1, A2, IsTriple) ->
+    type_lines1(T, A1, [type_star(H) | A2], IsTriple);
+type_lines1([[{{{tag, _Type}, Tag}, _ } = H | T1] = List | T], A1, A2, IsTriple) ->
     %% Block level tags - these are look ahead they must be
     %% on a single line (ie directly followed by a lf and nothing else
     case is_blank(T1) of
         false ->
-            type_lines1(T, A1, [{normal , List} | A2]);
+            type_lines1(T, A1, [{normal , List} | A2], IsTriple);
         true  ->
             case is_block_tag(Tag) of
                 true  ->
-                    type_lines1(T, A1, [{blocktag , [H]} | A2]);
+                    type_lines1(T, A1, [{blocktag , [H]} | A2], IsTriple);
                 false ->
-                    type_lines1(T, A1, [{tag, [H | T1]} | A2])
+                    type_lines1(T, A1, [{tag, [H | T1]} | A2], IsTriple)
             end
     end;
-type_lines1([[{{lf, _}, _}| []]  = H | T], A1, A2) ->
+type_lines1([[{{lf, _}, _}| []]  = H | T], A1, A2, IsTriple) ->
     %% types a blank line or a code block
-    type_lines1(T, A1, [{linefeed, H} | A2]);
-type_lines1([[{{ws, _}, _} | _T1] = H | T], A1, A2) ->
-    type_lines1(T, A1, [type_ws(H) | A2]);
-
+    case IsTriple of
+        false -> %% cuongth: break line
+	    type_lines1(T, A1, [{linefeed, H} | A2], false);
+	true -> %% cuongth: don't break <pre><code> block
+	    type_lines1(T, A1, [{normal, H} | A2], true)
+    end;
+type_lines1([[{{ws, _}, _} | _T1] = H | T], A1, A2, IsTriple) ->
+    type_lines1(T, A1, [type_ws(H) | A2], IsTriple);
+type_lines1([[ {{punc,backtick},"`"},
+               {{punc,backtick},"`"},
+	       {{punc,backtick},"`"} | _T1] = H | T], A1, A2, IsTriple) ->
+    case IsTriple of
+        true -> %% cuongth: go out of <pre><code> block
+	    type_lines1(T, A1, [{normal , H} | A2], false);
+	false -> %% cuongth: jump in <pre><code> block
+	    type_lines1(T, A1, [{normal , H} | A2], true)
+    end;
 %% Final clause...
-type_lines1([H | T], A1, A2) ->
-    type_lines1(T, A1, [{normal , H} | A2]).
+type_lines1([H | T], A1, A2, IsTriple) ->
+    type_lines1(T, A1, [{normal , H} | A2], IsTriple).
 
-t_inline(H, T1, T2, A1, A2) ->
+t_inline(H, T1, T2, A1, A2, IsTriple) ->
     case snip_ref(T1) of
         {Type, {Id, {Url, Title}}} ->
             type_lines1(T2, lists:flatten([{Id, {Url, Title}} | A1]),
-                        [{Type, H} | A2]);
+                        [{Type, H} | A2], IsTriple);
         normal ->
-            type_lines1(T2, A1, [{normal, H} | A2])
+            type_lines1(T2, A1, [{normal, H} | A2], IsTriple)
     end.
 
 %% strips blanks from the beginning and end
@@ -603,6 +620,8 @@ is_blank([{{ws, _}, _} | T])  ->
 is_blank(_List) ->
     false.
 
+is_block_tag("code") ->
+    true;
 is_block_tag("address") ->
     true;
 is_block_tag("blockquote") ->
@@ -890,18 +909,12 @@ type_ws1([{{ws, _}, _} | T])  ->
 type_ws1(_L) ->
     try_codeblock.
 
-%% 4 or more spaces takes you over the limit
-%% (a tab is 4...)
-type_ws2([{{ws, tab}, _} | T])  ->
-    {codeblock, T};
-type_ws2([{{ws, comp}, W} | T]) ->
-    case gt(W, 4) of
-        {true, R} ->
-            {codeblock, [R| T]};
-        false ->
-            normal
-    end;
+%% cuongth: don't use space or tab for codeblock
 type_ws2([{{ws, sp}, _} | _T])  ->
+    normal;
+type_ws2([{{ws, tab}, _} | _T])  ->
+    normal;
+type_ws2([{{ws, comp}, _} | _T]) ->
     normal.
 
 gt(String, Len) ->
@@ -1491,8 +1504,8 @@ htmlchars1([$\\, $` | T], A) ->
 htmlchars1([$`, $`, $` | T], A) ->
     {T2, NewA} = case get_class(T, []) of
         none ->
-            supercode(T, "");
-        {Class, Tail3} ->
+            supercode(T, "no-highlight");
+       {Class, Tail3} ->
             supercode(Tail3, Class)
     end,
     htmlchars1(T2, [NewA | A]);
@@ -1528,12 +1541,9 @@ superstrong(List, Delim) ->
 dblcode(List) ->
     {T, Tag} = interpolate2(List, $`, "code", "" ,[]),
     {T, "<pre>" ++ Tag ++ "</pre>"}.
-supercode(List, "") ->
-    {T, Tag} = interpolate_code(List, $`, "code", "",[]),
-    {T, "<pre>" ++ Tag ++ "</pre>"};
 supercode(List, Class) ->
-    {T, Tag} = interpolate_code(List, $`, "code", "",[]),
-    {T, "<pre class=\"" ++ Class ++ "\">" ++ Tag ++ "</pre>"}.
+    {T, Tag} = interpolate_code(List, $`, Class, "",[]),
+    {T, "<pre>" ++ Tag ++ "</pre>"}.
 code(List)  ->
     interpolateX(List, $`, "code", "", []).
 
@@ -1566,11 +1576,14 @@ interpolate2([H | T], Delim, Tag, X, Acc) ->
     interpolate2(T, Delim, Tag, X, [H | Acc]).
 
 %% cuongth: interpolate_code for triple delimiters...
-interpolate_code([], D, _Tag1, _X, Acc) ->
-    {[], [D] ++ [D] ++ [D] ++ htmlchars(lists:reverse(Acc))};
-interpolate_code([D, D, D | T], D, Tag, X, Acc) ->
-    {T,  "<" ++ Tag ++ ">" ++ htmlchars(lists:reverse(Acc)) ++ X ++
-         "</" ++ Tag ++ ">"};
+interpolate_code([], _D, _Tag1, _X, Acc) ->
+    {[], htmlchars(lists:reverse(Acc))};
+interpolate_code([D, D, D | T], D, "", X, Acc) ->
+    {T,  "<code>" ++ htmlchars(lists:reverse(Acc)) ++ X ++
+         "</code>"};
+interpolate_code([D, D, D | T], D, Class, X, Acc) ->
+    {T,  "<code class=\"" ++ Class ++ "\">" ++ htmlchars(lists:reverse(Acc)) ++ X ++
+         "</code>"};
 interpolate_code([H | T], Delim, Tag, X, Acc) ->
     interpolate_code(T, Delim, Tag, X, [H | Acc]).
 
