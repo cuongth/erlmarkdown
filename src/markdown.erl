@@ -524,7 +524,12 @@ type_lines1([[{{md, gt}, _}, {{lf, _}, _} | []] = H | T], A1, A2, IsTriple) ->
     type_lines1(T, A1, [{normal, H} | A2], IsTriple);
 %% one with anything after it starts a blockquote
 type_lines1([[{{md, gt}, _} | _T1] = H | T], A1, A2, IsTriple) ->
-    type_lines1(T, A1, [{blockquote, H} | A2], IsTriple);
+    case IsTriple of
+      true ->
+        type_lines1(T, A1, [{normal, H} | A2], true);
+      false ->
+        type_lines1(T, A1, [{blockquote, H} | A2], false)
+    end;
 type_lines1([[{{ws, _}, _}, {{md, star}, _} = ST1, {{ws, _}, _} = WS1 | T1] = H | T], A1, A2, IsTriple) ->
     %% types unordered lists lines
     %% NOTE 1: the dashed version is generated in type_setext_h2
@@ -579,7 +584,7 @@ type_lines1([[ {{punc,backtick},"`"},
                {{punc,backtick},"`"},
 	       {{punc,backtick},"`"} | _T1] = H | T], A1, A2, IsTriple) ->
     case IsTriple of
-        true -> %% cuongth: go out of <pre><code> block
+        true -> %% cuongth: go out of </code></pre> block
 	    type_lines1(T, A1, [{normal , H} | A2], false);
 	false -> %% cuongth: jump in <pre><code> block
 	    type_lines1(T, A1, [{normal , H} | A2], true)
@@ -1083,7 +1088,7 @@ snip(List) ->
 %%
 
 lex(String) ->
-    merge_ws(lex1(String, [], [])).
+    merge_ws(lex1(String, [], [], normal)).
 
 merge_ws(List) ->
     merge_ws1(List, []).
@@ -1096,93 +1101,143 @@ merge_ws1([H | T], Acc) ->
     merge_ws1(T, [H | Acc]).
 
 %% this is the terminal head which ends the parsing...
-lex1([], [], A2) ->
+lex1([], [], A2, _) ->
     lists:flatten(lists:reverse(A2));
-lex1([], A1, A2) ->
-    lex1([], [], [lex2(A1) | A2]);
+lex1([], A1, A2, Ignore) ->
+    lex1([], [], [lex2(A1) | A2], Ignore);
 %% these two heads capture opening and closing tags
-lex1([$<, $/|T], A1, A2) ->
+lex1([$<, $/|T], A1, A2, normal) ->
     {Tag, NewT} = closingdiv(T, []),
-    lex1(NewT, [], [Tag, lex2(A1) | A2]);
-lex1([$< | T], A1, A2) ->
+    lex1(NewT, [], [Tag, lex2(A1) | A2], normal);
+lex1([$<, $/|T], A1, A2, Ignore) ->
+    lex1(T, ["</" |A1] , A2, Ignore);
+lex1([$< | T], A1, A2, normal) ->
     {Tag, NewT} = openingdiv(T),
-    lex1(NewT, [], [Tag , lex2(A1) | A2]);
+    lex1(NewT, [], [Tag , lex2(A1) | A2], normal);
+lex1([$< | T], A1, A2, Ignore) ->
+    lex1(T, ["<" |A1] , A2, Ignore);
 %% these clauses are the normal lexer clauses
-lex1([$= | T], A1, A2) ->
-    lex1(T, [], [{{md, eq}, "="},  lex2(A1) | A2]);
-lex1([$- | T], A1, A2) ->
-    lex1(T, [], [{{md, dash}, "-"}, lex2(A1) | A2]);
-lex1([$# | T], A1, A2) ->
-    lex1(T, [], [{{md, atx}, "#"},  lex2(A1) | A2]);
-lex1([$> | T], A1, A2) ->
-    lex1(T, [], [{{md, gt}, ">"},   lex2(A1) | A2]);
-lex1([$+ | T], A1, A2) ->
-    lex1(T, [], [{{md, plus}, "+"}, lex2(A1) | A2]);
-lex1([$* | T], A1, A2) ->
-    lex1(T, [], [{{md, star}, "*"}, lex2(A1) | A2]);
-lex1([$_ | T], A1, A2) ->
-    lex1(T, [], [{{md, underscore}, "_"}, lex2(A1) | A2]);
-lex1([$1 | T], A1, A2) ->
-    lex1(T, [], [{num, "1"}, lex2(A1) | A2]);
-lex1([$2 | T], A1, A2) ->
-    lex1(T, [], [{num, "2"}, lex2(A1) | A2]);
-lex1([$3 | T], A1, A2) ->
-    lex1(T, [], [{num, "3"}, lex2(A1) | A2]);
-lex1([$4 | T], A1, A2) ->
-    lex1(T, [], [{num, "4"}, lex2(A1) | A2]);
-lex1([$5 | T], A1, A2) ->
-    lex1(T, [], [{num, "5"}, lex2(A1) | A2]);
-lex1([$6 | T], A1, A2) ->
-    lex1(T, [], [{num, "6"}, lex2(A1) | A2]);
-lex1([$7 | T], A1, A2) ->
-    lex1(T, [], [{num, "7"}, lex2(A1) | A2]);
-lex1([$8 | T], A1, A2) ->
-    lex1(T, [], [{num, "8"}, lex2(A1) | A2]);
-lex1([$9 | T], A1, A2) ->
-    lex1(T, [], [{num, "9"}, lex2(A1) | A2]);
-lex1([$0 | T], A1, A2) ->
-    lex1(T, [], [{num, "0"}, lex2(A1) | A2]);
-lex1([$. | T], A1, A2) ->
-    lex1(T, [], [{{punc, fullstop}, "."}, lex2(A1) | A2]);
-lex1([$: | T], A1, A2) ->
-    lex1(T, [], [{{punc, colon}, ":"}, lex2(A1) | A2]);
-lex1([$' | T], A1, A2) ->
-    lex1(T, [], [{{punc, singleq}, "'"}, lex2(A1) | A2]); %'
-lex1([$" | T], A1, A2) ->
-    lex1(T, [], [{{punc, doubleq}, "\""}, lex2(A1) | A2]); %"
-lex1([$` | T], A1, A2) ->
-    lex1(T, [], [{{punc, backtick}, "`"}, lex2(A1) | A2]); %"
-lex1([$! | T], A1, A2) ->
-    lex1(T, [], [{{punc, bang}, "!"}, lex2(A1) | A2]); %"
-lex1([$\\ | T], A1, A2)->
-    lex1(T, [], [{{punc, bslash}, "\\"}, lex2(A1) | A2]); %"
-lex1([$/ | T], A1, A2) ->
-    lex1(T, [], [{{punc, fslash}, "/"}, lex2(A1) | A2]); %"
-lex1([$( | T], A1, A2) ->
-    lex1(T, [], [{bra, "("}, lex2(A1) | A2]);
-lex1([$) | T], A1, A2) ->
-    lex1(T, [], [{ket, ")"}, lex2(A1) | A2]);
-lex1([$[ | T], A1, A2) ->
-    lex1(T, [], [{{inline, open}, "["}, lex2(A1) | A2]);
-lex1([$] | T], A1, A2) ->
-    lex1(T, [], [{{inline, close}, "]"}, lex2(A1) | A2]);
-lex1([?SPACE | T], A1, A2) ->
+lex1([$= | T], A1, A2, normal) ->
+    lex1(T, [], [{{md, eq}, "="},  lex2(A1) | A2], normal);
+lex1([$= | T], A1, A2, Ignore) ->
+    lex1(T, ["=" |A1] , A2, Ignore);
+lex1([$- | T], A1, A2, normal) ->
+    lex1(T, [], [{{md, dash}, "-"}, lex2(A1) | A2], normal);
+lex1([$- | T], A1, A2, Ignore) ->
+    lex1(T, ["-" |A1] , A2, Ignore);
+lex1([$# | T], A1, A2, normal) ->
+    lex1(T, [], [{{md, atx}, "#"},  lex2(A1) | A2], normal);
+lex1([$# | T], A1, A2, Ignore) ->
+    lex1(T, ["#" |A1] , A2, Ignore);
+lex1([$> | T], A1, A2, normal) ->
+    lex1(T, [], [{{md, gt}, ">"},   lex2(A1) | A2], normal);
+lex1([$> | T], A1, A2, Ignore) ->
+    lex1(T, [">" |A1] , A2, Ignore);
+lex1([$+ | T], A1, A2, normal) ->
+    lex1(T, [], [{{md, plus}, "+"}, lex2(A1) | A2], normal);
+lex1([$+ | T], A1, A2, Ignore) ->
+    lex1(T, ["+" |A1] , A2, Ignore);
+lex1([$* | T], A1, A2, normal) ->
+    lex1(T, [], [{{md, star}, "*"}, lex2(A1) | A2], normal);
+lex1([$* | T], A1, A2, Ignore) ->
+    lex1(T, ["*" |A1] , A2, Ignore);
+lex1([$_ | T], A1, A2, normal) ->
+    lex1(T, [], [{{md, underscore}, "_"}, lex2(A1) | A2], normal);
+lex1([$_ | T], A1, A2, Ignore) ->
+    lex1(T, ["_" |A1] , A2, Ignore);
+lex1([$1 | T], A1, A2, Ignore) ->
+    lex1(T, [], [{num, "1"}, lex2(A1) | A2], Ignore);
+lex1([$2 | T], A1, A2, Ignore) ->
+    lex1(T, [], [{num, "2"}, lex2(A1) | A2], Ignore);
+lex1([$3 | T], A1, A2, Ignore) ->
+    lex1(T, [], [{num, "3"}, lex2(A1) | A2], Ignore);
+lex1([$4 | T], A1, A2, Ignore) ->
+    lex1(T, [], [{num, "4"}, lex2(A1) | A2], Ignore);
+lex1([$5 | T], A1, A2, Ignore) ->
+    lex1(T, [], [{num, "5"}, lex2(A1) | A2], Ignore);
+lex1([$6 | T], A1, A2, Ignore) ->
+    lex1(T, [], [{num, "6"}, lex2(A1) | A2], Ignore);
+lex1([$7 | T], A1, A2, Ignore) ->
+    lex1(T, [], [{num, "7"}, lex2(A1) | A2], Ignore);
+lex1([$8 | T], A1, A2, Ignore) ->
+    lex1(T, [], [{num, "8"}, lex2(A1) | A2], Ignore);
+lex1([$9 | T], A1, A2, Ignore) ->
+    lex1(T, [], [{num, "9"}, lex2(A1) | A2], Ignore);
+lex1([$0 | T], A1, A2, Ignore) ->
+    lex1(T, [], [{num, "0"}, lex2(A1) | A2], Ignore);
+lex1([$. | T], A1, A2, normal) ->
+    lex1(T, [], [{{punc, fullstop}, "."}, lex2(A1) | A2], normal);
+lex1([$. | T], A1, A2, Ignore) ->
+    lex1(T, ["." |A1] , A2, Ignore);
+lex1([$: | T], A1, A2, normal) ->
+    lex1(T, [], [{{punc, colon}, ":"}, lex2(A1) | A2], normal);
+lex1([$: | T], A1, A2, Ignore) ->
+    lex1(T, [":" |A1] , A2, Ignore);
+lex1([$' | T], A1, A2, normal) ->
+    lex1(T, [], [{{punc, singleq}, "'"}, lex2(A1) | A2], normal); %'
+lex1([$' | T], A1, A2, Ignore) ->
+    lex1(T, ["'" |A1] , A2, Ignore);
+lex1([$" | T], A1, A2, normal) ->
+    lex1(T, [], [{{punc, doubleq}, "\""}, lex2(A1) | A2], normal); %"
+lex1([$" | T], A1, A2, Ignore) ->
+    lex1(T, ["\"" |A1] , A2, Ignore);
+lex1([$`, $`, $` | T], A1, A2, normal) ->
+    lex1(T, [], [{{punc, backtick}, "`"}, {{punc, backtick}, "`"}, {{punc, backtick}, "`"},
+                 lex2(A1) | A2], precode); %``` cuongth: jump in <pre><code>
+lex1([$`, $`, $`, ?LF | T], A1, A2, precode) ->
+    lex1(T, [], [{{punc, backtick}, "`"}, {{punc, backtick}, "`"}, {{punc, backtick}, "`"},
+                 {{lf, lf}, [?LF]}, lex2(A1) | A2], normal); %``` cuongth: go out </code></pre>
+lex1([$`, $`, $` | T], A1, A2, Ignore) ->
+    lex1(T, ["```" |A1] , A2, Ignore);
+lex1([$` | T], A1, A2, normal) ->
+    lex1(T, [], [{{punc, backtick}, "`"}, lex2(A1) | A2], normal); %`
+lex1([$` | T], A1, A2, Ignore) ->
+    lex1(T, ["`" |A1] , A2, Ignore);
+lex1([$! | T], A1, A2, normal) ->
+    lex1(T, [], [{{punc, bang}, "!"}, lex2(A1) | A2], normal); %"
+lex1([$! | T], A1, A2, Ignore) ->
+    lex1(T, ["!" |A1] , A2, Ignore);
+lex1([$\\ | T], A1, A2, normal)->
+    lex1(T, [], [{{punc, bslash}, "\\"}, lex2(A1) | A2], normal); %"
+lex1([$\\ | T], A1, A2, Ignore)->
+    lex1(T, ["\\" |A1] , A2, Ignore);
+lex1([$/ | T], A1, A2, normal) ->
+    lex1(T, [], [{{punc, fslash}, "/"}, lex2(A1) | A2], normal); %"
+lex1([$/ | T], A1, A2, Ignore) ->
+    lex1(T, ["/" |A1] , A2, Ignore);
+lex1([$( | T], A1, A2, normal) ->
+    lex1(T, [], [{bra, "("}, lex2(A1) | A2], normal);
+lex1([$( | T], A1, A2, Ignore) ->
+    lex1(T, ["(" |A1] , A2, Ignore);
+lex1([$) | T], A1, A2, normal) ->
+    lex1(T, [], [{ket, ")"}, lex2(A1) | A2], normal);
+lex1([$) | T], A1, A2, Ignore) ->
+    lex1(T, [")" |A1] , A2, Ignore);
+lex1([$[ | T], A1, A2, normal) ->
+    lex1(T, [], [{{inline, open}, "["}, lex2(A1) | A2], normal);
+lex1([$[ | T], A1, A2, Ignore) ->
+    lex1(T, ["[" |A1] , A2, Ignore);
+lex1([$] | T], A1, A2, normal) ->
+    lex1(T, [], [{{inline, close}, "]"}, lex2(A1) | A2], normal);
+lex1([$] | T], A1, A2, Ignore) ->
+    lex1(T, ["]" |A1] , A2, Ignore);
+lex1([?SPACE | T], A1, A2, normal) ->
     %% note there is a special 'whitespace' {{ws, none}, ""} which is used to generate non-space
     %% filling whitespace for cases like '*bob* is great' which needs a non-space filling
     %% whitespace prepended to trigger emphasis so it renders as "<em>bob</em> is great...
     %% that 'character' doesn't exist so isn't in the lexer but appears in the parser
-    lex1(T, [], [{{ws, sp}, " "}, lex2(A1) | A2]);
-lex1([?TAB | T], A1, A2) ->
-    lex1(T, [], [{{ws, tab}, "\t"}, lex2(A1) | A2]);
-lex1([?NBSP | T], A1, A2) ->
-    lex1(T, [], [{{ws, sp}, "&nbsp"}, lex2(A1) | A2]);
-lex1([?CR, ?LF | T], A1, A2) ->
-    lex1(T, [], [{{lf, crlf}, [?CR , ?LF]}, lex2(A1) | A2]);
-lex1([?LF | T], A1, A2) ->
-    lex1(T, [], [{{lf, lf}, [?LF]}, lex2(A1) | A2]);
-lex1([H|T], A1, A2) ->
+    lex1(T, [], [{{ws, sp}, " "}, lex2(A1) | A2], normal);
+lex1([?TAB | T], A1, A2, Ignore) ->
+    lex1(T, [], [{{ws, tab}, "\t"}, lex2(A1) | A2], Ignore);
+lex1([?NBSP | T], A1, A2, Ignore) ->
+    lex1(T, [], [{{ws, sp}, "&nbsp"}, lex2(A1) | A2], Ignore);
+lex1([?CR, ?LF | T], A1, A2, Ignore) ->
+    lex1(T, [], [{{lf, crlf}, [?CR , ?LF]}, lex2(A1) | A2], Ignore);
+lex1([?LF | T], A1, A2, Ignore) ->
+    lex1(T, [], [{{lf, lf}, [?LF]}, lex2(A1) | A2], Ignore);
+lex1([H|T], A1, A2, Ignore) ->
     %% this final clause accumulates line fragments
-    lex1(T, [H |A1] , A2).
+    lex1(T, [H |A1] , A2, Ignore).
 
 lex2([]) ->
     [];
@@ -1442,95 +1497,98 @@ htmlencode([Else | Rest], Acc) ->
     htmlencode(Rest, [Else | Acc]).
 
 htmlchars(List) ->
-    htmlchars1(List, []).
+    htmlchars1(List, [], normal).
 
-htmlchars1([], Acc) ->
+htmlcharsinner(List, Ignore) ->
+    htmlchars1(List, [], Ignore).
+
+htmlchars1([], Acc, _Ignore) ->
     lists:flatten(lists:reverse(Acc));
-htmlchars1([{tags, Tag} | T], Acc) ->
+htmlchars1([{tags, Tag} | T], Acc, Ignore) ->
     %% tags are just wheeched out unescaped
-    htmlchars1(T, [Tag | Acc]);
-htmlchars1([?CR, ?LF | T], Acc) ->
+    htmlchars1(T, [Tag | Acc], Ignore);
+htmlchars1([?CR, ?LF | T], Acc, Ignore) ->
     %% line ends are pushed to a space..
-    htmlchars1(T, ["\n" | Acc]);
-htmlchars1([?LF | T], Acc)  ->
+    htmlchars1(T, ["\n" | Acc], Ignore);
+htmlchars1([?LF | T], Acc, Ignore)  ->
     %% line ends are pushed to a space..
-    htmlchars1(T, ["\n" | Acc]);
-htmlchars1([?CR | T], Acc)  ->
-    htmlchars1(T, ["\r" | Acc]);
-htmlchars1([$\\, $*, $*, $* | T], A) ->
+    htmlchars1(T, ["\n" | Acc], Ignore);
+htmlchars1([?CR | T], Acc, Ignore)  ->
+    htmlchars1(T, ["\r" | Acc], Ignore);
+htmlchars1([$\\, $*, $*, $* | T], A, Ignore) ->
     %% there is a non-space filling white space represented by the atom 'none'
     %% which is created in the parser (NOT IN THE LEXER!) and which triggers
     %% emphasis or strong tags being turned on...
-    htmlchars1(T, [$*, $*, $* | A]);
-htmlchars1([$*, $*, $* | T], A) ->
+    htmlchars1(T, [$*, $*, $* | A], Ignore);
+htmlchars1([$*, $*, $* | T], A, normal) ->
     {T2, NewA} = superstrong(T, $*),
-    htmlchars1(T2, [NewA | A]);
-htmlchars1([$\\, $*, $* | T], A) ->
+    htmlchars1(T2, [NewA | A], normal);
+htmlchars1([$\\, $*, $* | T], A, Ignore) ->
     %% repeat for strong
-    htmlchars1(T, [$*, $* | A]);
-htmlchars1([$*, $* | T], A) ->
+    htmlchars1(T, [$*, $* | A], Ignore);
+htmlchars1([$*, $* | T], A, normal) ->
     {T2, NewA} = strong(T, $*),
-    htmlchars1(T2, [NewA | A]);
-htmlchars1([$\\, $* | T], A) ->
+    htmlchars1(T2, [NewA | A], normal);
+htmlchars1([$\\, $* | T], A, Ignore) ->
     %% likewise for strong
-    htmlchars1(T, [$* | A]);
-htmlchars1([$* | T], A) ->
+    htmlchars1(T, [$* | A], Ignore);
+htmlchars1([$* | T], A, normal) ->
     {T2, NewA} = emphasis(T, $*),
-    htmlchars1(T2, [NewA | A]);
-htmlchars1([$\\, $_, $_, $_ | T], A) ->
+    htmlchars1(T2, [NewA | A], normal);
+htmlchars1([$\\, $_, $_, $_ | T], A, Ignore) ->
     %% and again for underscores
-    htmlchars1(T, [$_, $_, $_ | A]);
-htmlchars1([$_, $_, $_ | T], A) ->
+    htmlchars1(T, [$_, $_, $_ | A], Ignore);
+htmlchars1([$_, $_, $_ | T], A, normal) ->
     %% the none atom is the non-space filling whitespace
     {T2, NewA} = superstrong(T, $_),
-    htmlchars1(T2, [NewA | A]);
-htmlchars1([$\\, $_, $_ | T], A) ->
+    htmlchars1(T2, [NewA | A], normal);
+htmlchars1([$\\, $_, $_ | T], A, Ignore) ->
     %% and strong
     %% and again for underscores
-    htmlchars1(T, [$_, $_ | A]);
-htmlchars1([$_, $_ | T], A) ->
+    htmlchars1(T, [$_, $_ | A], Ignore);
+htmlchars1([$_, $_ | T], A, normal) ->
     {T2, NewA} = strong(T, $_),
-    htmlchars1(T2, [NewA | A]);
-htmlchars1([$\\, $_ | T], A) ->
+    htmlchars1(T2, [NewA | A], normal);
+htmlchars1([$\\, $_ | T], A, Ignore) ->
     %% likewise for strong
-    htmlchars1(T, [$_ | A]);
-htmlchars1([$_ | T], A) ->
+    htmlchars1(T, [$_ | A], Ignore);
+htmlchars1([$_ | T], A, normal) ->
     {T2, NewA} = emphasis(T, $_),
-    htmlchars1(T2, [NewA | A]);
-htmlchars1([$\\, $` | T], A) ->
+    htmlchars1(T2, [NewA | A], normal);
+htmlchars1([$\\, $` | T], A, Ignore) ->
     %% handle backtick escaping
-    htmlchars1(T, [$` | A]);
+    htmlchars1(T, [$` | A], Ignore);
 %% cuongth: add code
-htmlchars1([$`, $`, $` | T], A) ->
+htmlchars1([$`, $`, $` | T], A, normal) ->
     {T2, NewA} = case get_class(T, []) of
         none ->
             supercode(T, "no-highlight");
        {Class, Tail3} ->
             supercode(Tail3, Class)
     end,
-    htmlchars1(T2, [NewA | A]);
-htmlchars1([$`, $` | T], A) ->
+    htmlchars1(T2, [NewA | A], normal);
+htmlchars1([$`, $` | T], A, normal) ->
     {T2, NewA} = dblcode(T),
-    htmlchars1(T2, [NewA | A]);
-htmlchars1([$` | T], A) ->
+    htmlchars1(T2, [NewA | A], normal);
+htmlchars1([$` | T], A, normal) ->
     {T2, NewA} = code(T),
-    htmlchars1(T2, [NewA | A]);
-htmlchars1([?COPY | T], A) ->
-    htmlchars1(T, ["&copy;" | A]);
-htmlchars1([?AMP | T], A)  ->
-    htmlchars1(T, ["&amp;" | A]);
-htmlchars1([$& | T], A) ->
-    htmlchars1(T, ["&amp;" | A]);
-htmlchars1([$< | T], A)  ->
-    htmlchars1(T, ["&lt;" | A]);
-htmlchars1([?NBSP | T], A)  ->
-    htmlchars1(T, ["&nbsp;" | A]);
-htmlchars1([?TAB | T], A) ->
-    htmlchars1(T, ["    " | A]);
-htmlchars1([none | T], A) ->
-    htmlchars1(T, A);
-htmlchars1([H | T], A) ->
-    htmlchars1(T, [H | A]).
+    htmlchars1(T2, [NewA | A], normal);
+htmlchars1([?COPY | T], A, Ignore) ->
+    htmlchars1(T, ["&copy;" | A], Ignore);
+htmlchars1([?AMP | T], A, Ignore)  ->
+    htmlchars1(T, ["&amp;" | A], Ignore);
+htmlchars1([$& | T], A, Ignore) ->
+    htmlchars1(T, ["&amp;" | A], Ignore);
+htmlchars1([$< | T], A, Ignore)  ->
+    htmlchars1(T, ["&lt;" | A], Ignore);
+htmlchars1([?NBSP | T], A, Ignore)  ->
+    htmlchars1(T, ["&nbsp;" | A], Ignore);
+htmlchars1([?TAB | T], A, Ignore) ->
+    htmlchars1(T, ["    " | A], Ignore);
+htmlchars1([none | T], A, Ignore) ->
+    htmlchars1(T, A, Ignore);
+htmlchars1([H | T], A, Ignore) ->
+    htmlchars1(T, [H | A], Ignore).
 
 emphasis(List, Delim) ->
     interpolate(List, Delim, "em", "" ,[]).
@@ -1577,12 +1635,12 @@ interpolate2([H | T], Delim, Tag, X, Acc) ->
 
 %% cuongth: interpolate_code for triple delimiters...
 interpolate_code([], _D, _Tag1, _X, Acc) ->
-    {[], htmlchars(lists:reverse(Acc))};
+    {[], htmlcharsinner(lists:reverse(Acc), precode)};
 interpolate_code([D, D, D | T], D, "", X, Acc) ->
-    {T,  "<code>" ++ htmlchars(lists:reverse(Acc)) ++ X ++
+    {T,  "<code>" ++ htmlcharsinner(lists:reverse(Acc), precode) ++ X ++
          "</code>"};
 interpolate_code([D, D, D | T], D, Class, X, Acc) ->
-    {T,  "<code class=\"" ++ Class ++ "\">" ++ htmlchars(lists:reverse(Acc)) ++ X ++
+    {T,  "<code class=\"" ++ Class ++ "\">" ++ htmlcharsinner(lists:reverse(Acc), precode) ++ X ++
          "</code>"};
 interpolate_code([H | T], Delim, Tag, X, Acc) ->
     interpolate_code(T, Delim, Tag, X, [H | Acc]).
